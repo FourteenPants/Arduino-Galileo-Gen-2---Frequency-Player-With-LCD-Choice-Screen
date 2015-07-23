@@ -30,9 +30,27 @@ class Song(object): #This class defines the behavior of a 'Song' object.
         for i in midiPattern[0]: #Reads through Track 0 to look for a SetTempoEvent to determine the beats-per-minute of the song.
             if isinstance(i, midi.SetTempoEvent):
                 self.bpm = i.bpm
-        for i in midiPattern[track]: #Reads through the user-specified track; if the event is a NoteOnEvent (i.e. "play this note" event) and matches the user-specified channel, it adds it to the note sheet.
-            if isinstance(i, midi.NoteOnEvent) and i.channel == channel:
-                self.sheet.append(MusicalNote(i.pitch, i.tick))
+        
+        if not self.usesNoteOffEvents(midiPattern, track):
+            for i in midiPattern[track]: #Reads through the user-specified track; if the event is a NoteOnEvent (i.e. "play this note" event) and matches the user-specified channel, it adds it to the note sheet.
+                if isinstance(i, midi.NoteOnEvent) and i.channel == channel:
+                    self.sheet.append(MusicalNote(i.pitch, i.tick))
+        else:
+            for i in midiPattern[track]:
+                if isinstance(i, midi.NoteOffEvent) and i.channel == channel:
+                    self.sheet.append(MusicalNote(i.pitch, i.tick))
+                
+    def usesNoteOffEvents(self, midiPattern, track):
+        '''
+        function: checks to see if .midi track uses NoteOnEvents or a combination of NoteOn and NoteOffEvents.
+        midiPattern: the .midi pattern to analyze
+        track: the track to check
+        '''
+        containsNoteOff = False
+        for i in midiPattern[track]:
+            if isinstance(i, midi.NoteOffEvent):
+                containsNoteOff = True
+        return containsNoteOff
 
     def getFrequencyList(self):
         '''
@@ -44,6 +62,7 @@ class Song(object): #This class defines the behavior of a 'Song' object.
         while index < len(self.sheet) - 1:      
             frequencyList.append(self.sheet[index].frequency)
             index += 1
+        frequencyList.append(-1)
         return frequencyList
         
     def getDurationList(self):
@@ -62,8 +81,140 @@ class Song(object): #This class defines the behavior of a 'Song' object.
             noteLengthTicks = self.sheet[index + 1].tick #length of the note in ticks
             noteLength = ((beatLength / self.resolution)) * noteLengthTicks * 1000 #length of note in milliseconds
             
-            durationList.append(noteLength)
+            durationList.append(int(noteLength))
             index += 1
+        durationList.append(-1)
+        return durationList
+
+    def shiftOctaveUp(self):
+        '''
+        function: raises the pitch of the entire song by an octave
+        I added this back when I was still working with the Finch. For some reason, shifting .midi files an octave up makes them sound better when played back on the Finch or the Arduino.
+        '''
+        for note in self.sheet:
+            note.changeFrequency(note.frequency*2)
+            
+    def shiftOctaveDown(self):
+        '''
+        function: lowers the pitch of the entire song by an octave
+        '''
+        for note in self.sheet:
+            note.changeFrequency(note.frequency/2)
+            
+    def doubleTempo(self):
+        self.bpm = self.bpm * 2
+
+    def debugPrintValues(self): #Ignore; used for debugging.
+        print self.bpm
+        print self.resolution
+        print self.sheet
+
+class SongMulti(object): #This class defines the behavior of a 'Song' object.
+    def __init__(self, midiPattern, track1, channel1, track2, channel2):
+        '''
+        Class constructor. To create a new song, use the following format:
+            nameOfObject = Song(midiPattern, track, channel)
+            
+        Because the Arduino buzzer can only play one note at a time, it's currently not possible to play every part of a song with multiple instruments. You have
+        to specifically look for .midi files with only one part. You can also use a .midi file with multiple parts if one of the parts is the melody while the
+        other parts are unimportant.
+        
+        This class represents a song made up of individual notes played one at a time in sequential order, read from the particular 'track' and 'channel' of the
+        .midi file that contains the song's main melody. All other parts of the .midi file (i.e. other musical accompaniment) won't be included.
+        
+        midiPattern: 'pattern' of a song obtained by having the MIDI library analyze a .midi or .mid file; is divided into 'tracks'
+        track: integer, represents the track that you want to read from; tracks contain 'Events' that are divided between different channels.
+        channel: integer, represents the channel of the track that you want to read from.
+        '''
+        self.currentTick = 0
+        self.currentNoteIndex = 0
+        self.bpm = 120 #This is just a default in case the .midi doesn't actually list a tempo.
+        self.sheet1 = []
+        self.sheet2 = []
+        self.resolution = midiPattern.resolution #ticks per quarter note
+        for i in midiPattern[0]: #Reads through Track 0 to look for a SetTempoEvent to determine the beats-per-minute of the song.
+            if isinstance(i, midi.SetTempoEvent):
+                self.bpm = i.bpm
+        
+        if not self.usesNoteOffEvents(midiPattern, track1):
+            for i in midiPattern[track1]: #Reads through the user-specified track; if the event is a NoteOnEvent (i.e. "play this note" event) and matches the user-specified channel, it adds it to the note sheet.
+                if isinstance(i, midi.NoteOnEvent) and i.channel == channel1:
+                    self.sheet1.append(MusicalNote(i.pitch, i.tick))
+        else:
+            for i in midiPattern[track1]:
+                if isinstance(i, midi.NoteOffEvent) and i.channel == channel1:
+                    self.sheet1.append(MusicalNote(i.pitch, i.tick))
+                    
+        if not self.usesNoteOffEvents(midiPattern, track2):
+            for i in midiPattern[track2]: #Reads through the user-specified track; if the event is a NoteOnEvent (i.e. "play this note" event) and matches the user-specified channel, it adds it to the note sheet.
+                if isinstance(i, midi.NoteOnEvent) and i.channel == channel2:
+                    self.sheet2.append(MusicalNote(i.pitch, i.tick))
+        else:
+            for i in midiPattern[track2]:
+                if isinstance(i, midi.NoteOffEvent) and i.channel == channel2:
+                    self.sheet2.append(MusicalNote(i.pitch, i.tick))
+                
+    def usesNoteOffEvents(self, midiPattern, track):
+        '''
+        function: checks to see if .midi track uses NoteOnEvents or a combination of NoteOn and NoteOffEvents.
+        midiPattern: the .midi pattern to analyze
+        track: the track to check
+        '''
+        containsNoteOff = False
+        for i in midiPattern[track]:
+            if isinstance(i, midi.NoteOffEvent):
+                containsNoteOff = True
+        return containsNoteOff
+
+    def getFrequencyList(self, sheetNo):
+        '''
+        returns: a list containing the frequencies of every individual note to be played
+        sheetNo: int, the sheet to return (first or second)
+        '''
+        index = 0
+        frequencyList = []
+        
+        if sheetNo == 1:
+            while index < len(self.sheet1) - 1:      
+                frequencyList.append(self.sheet1[index].frequency)
+                index += 1
+        elif sheetNo == 2:
+            while index < len(self.sheet2) - 1:
+                frequencyList.append(self.sheet2[index].frequency)
+                index += 1
+
+        frequencyList.append(-1)
+        return frequencyList
+        
+    def getDurationList(self, sheetNo):
+        '''
+        returns: a list containing the durations of every individual note to be played
+        sheetNo: int, the sheet to return (first or second)
+        '''
+        beatLength = 60.0 / self.bpm #the number of seconds per 'beat' of the song
+        index = 0
+        durationList = []
+        
+        '''
+        Every event in a .midi file has a 'tick' value, representing the number of ticks that must pass after the *previous* event before the current event can occur.
+        The resolution of a .midi file is the number of ticks per beat of the song.
+        '''
+        if sheetNo == 1:
+            while index < len(self.sheet1) - 1:
+                noteLengthTicks = self.sheet1[index + 1].tick #length of the note in ticks
+                noteLength = ((beatLength / self.resolution)) * noteLengthTicks * 1000 #length of note in milliseconds
+                
+                durationList.append(int(noteLength))
+                index += 1
+        elif sheetNo == 2:
+            while index < len(self.sheet2) - 1:
+                noteLengthTicks = self.sheet2[index + 1].tick #length of the note in ticks
+                noteLength = ((beatLength / self.resolution)) * noteLengthTicks * 1000 #length of note in milliseconds
+                
+                durationList.append(int(noteLength))
+                index += 1
+
+        durationList.append(-1)
         return durationList
 
     def shiftOctaveUp(self):
@@ -114,10 +265,11 @@ def outputLists(filename, fileToOutput, track, channel):
                 file must be in same folder as midiConverter.py
     fileToOutput: this function outputs both lists to a text file; this is the filename of that text file
     '''
-    os.chdir('C:\Users\Yilin\Documents\Python\Arduino') #Change this to the folder on your computer that contains this file
+    os.chdir('C:\Users\Yilin\Python\Arduino') #Change this to the folder on your computer that contains this file
     pattern = midi.read_midifile(filename)
     song = Song(pattern, track, channel)
-    song.shiftOctaveUp()
+    #song.doubleTempo()
+    #song.shiftOctaveUp()
     
     file = open(fileToOutput, "w")
     
@@ -131,6 +283,7 @@ def outputLists(filename, fileToOutput, track, channel):
             frequencyList = frequencyList + '}'
         else:
             frequencyList = frequencyList + i
+    frequencyList = frequencyList + ';'
 
     for i in str(song.getDurationList()):
         if i == '[':
@@ -139,6 +292,7 @@ def outputLists(filename, fileToOutput, track, channel):
             durationList = durationList + '}'
         else:
             durationList = durationList + i
+    durationList = durationList + ';'
     
     file.write("Frequencies (Hz): \n")
     file.write(frequencyList)
@@ -151,10 +305,117 @@ def outputLists(filename, fileToOutput, track, channel):
     print song.getDurationList()
     
     file.close()
+def outputListsTwo(filename, fileToOutput, track1, channel1, track2, channel2):
+    '''
+    filename: string containing the filename of the midi file to be played
+                file must be in same folder as midiConverter.py
+    fileToOutput: this function outputs both lists to a text file; this is the filename of that text file
+    '''
+    os.chdir('C:\Users\Yilin\Python\Arduino') #Change this to the folder on your computer that contains this file
+    pattern = midi.read_midifile(filename)
+    song = SongMulti(pattern, track1, channel1, track2, channel2)
+    #song.shiftOctaveUp()
+    
+    file = open(fileToOutput, "w")
+    
+    frequencyList1 = ''
+    frequencyList2 = ''
+    durationList1 = ''
+    durationList2 = ''
+    
+    for i in str(song.getFrequencyList(1)):
+        if i == '[':
+            frequencyList1 = frequencyList1 + '{'
+        elif i == ']':
+            frequencyList1 = frequencyList1 + '}'
+        else:
+            frequencyList1 = frequencyList1 + i
+    frequencyList1 = frequencyList1 + ';'
+    
+    for i in str(song.getFrequencyList(2)):
+        if i == '[':
+            frequencyList2 = frequencyList2 + '{'
+        elif i == ']':
+            frequencyList2 = frequencyList2 + '}'
+        else:
+            frequencyList2 = frequencyList2 + i
+    frequencyList2 = frequencyList2 + ';'
+    
+    for i in str(song.getDurationList(1)):
+        if i == '[':
+            durationList1 = durationList1 + '{'
+        elif i == ']':
+            durationList1 = durationList1 + '}'
+        else:
+            durationList1 = durationList1 + i
+    durationList1 = durationList1 + ';'
+    
+    for i in str(song.getDurationList(2)):
+        if i == '[':
+            durationList2 = durationList2 + '{'
+        elif i == ']':
+            durationList2 = durationList2 + '}'
+        else:
+            durationList2 = durationList2 + i
+    durationList2 = durationList2 + ';'
+    
+    file.write("Frequencies 1 (Hz): \n")
+    file.write(frequencyList1)
+    file.write("\nFrequencies 2 (Hz): \n")
+    file.write(frequencyList2)
+    file.write("\n\nDurations 1 (ms): \n")
+    file.write(durationList1)
+    file.write("\nDurations 2 (ms): \n")
+    file.write(durationList2)
 
+    print "Frequency List 1:"
+    print song.getFrequencyList(1)
+    print "Frequency List 2:"
+    print song.getFrequencyList(2)
+    print "Duration List 1:"
+    print song.getDurationList(1)
+    print "Duration List 2:"
+    print song.getDurationList(2)
+    
+    file.close()
 
-os.chdir('C:\Users\Yilin\Documents\Python\Arduino') #Change this
+def findHighest(list):
+    highest = 0
+    for i in list:
+        if i > highest:
+            highest = i
+    return highest
 
-#outputLists('Poker_Face.mid', 'pokerFace.txt', 0, 0) #https://musescore.com/user/260941/scores/1017521
-#outputLists('Imperial_March.mid', 'imperialMarch.txt', 0, 0)
-outputLists('SuperMarioBrothers.mid', 'superMarioBrothers.txt', 0, 0)
+def findLowest(list):
+    lowest = 20000
+    for i in list:
+        if i < lowest and i != -1:
+            lowest = i
+    return lowest
+
+os.chdir('C:\Users\Yilin\Python\Arduino') #Change this
+
+#outputLists('Poker_Face.mid', 'pokerFace_mod.txt', 0, 0) #https://musescore.com/user/260941/scores/1017521
+#outputLists('Imperial_March.mid', 'imperialMarch_mod.txt', 0, 0)
+#outputLists('SuperMarioBrothers.mid', 'superMarioBrothers_mod.txt', 0, 0)#
+#outputLists('Never_Gonna_Give_You_Up.mid', 'neverGonnaGiveYouUp.txt', 0, 0)
+#outputLists('turretOpera.mid', 'turretOpera.txt', 0, 0)
+outputLists('song v3.mid', 'scaryMonstersAndNiceSprites.txt', 1, 0)
+#outputListsTwo('throughTheFireAndFlames.mid', 'throughTheFireAndFlames.txt', 0, 0, 2, 2)
+#outputLists('throughTheFireAndFlames.mid', 'throughTheFireAndFlames.txt', 0, 0)
+#outputListsTwo('Never_Gonna_Give_You_Up.mid', 'neverGonnaGiveYouUp.txt', 0, 0, 2, 2,)
+#outputLists('DarudeSandstorm.mid', 'darudeSandstorm.txt', 5, 4)
+
+'''
+pokerFace = Song(midi.read_midifile('Poker_Face.mid'), 0, 0)
+print findHighest(pokerFace.getFrequencyList())
+print findLowest(pokerFace.getFrequencyList())
+
+imperialMarch = Song(midi.read_midifile('Imperial_March.mid'), 0, 0)
+print findHighest(imperialMarch.getFrequencyList())
+print findLowest(imperialMarch.getFrequencyList())
+
+superMarioBrothers = Song(midi.read_midifile('SuperMarioBrothers.mid'), 0, 0)
+print findHighest(superMarioBrothers.getFrequencyList())
+print findLowest(superMarioBrothers.getFrequencyList())
+'''

@@ -24,10 +24,11 @@ def analyzeChannelFrequency(pattern, track):
             channelFrequency[i.channel] += 1
     return channelFrequency
 
-os.chdir('C:\Users\Yilin\Documents\Python\Arduino') #Change this
-pattern = midi.read_midifile('SuperMarioBrothers.mid')
-#printEvents(pattern, 0)
-print analyzeChannelFrequency(pattern, 0)
+os.chdir('C:\Users\Yilin\Python\Arduino') #Change this
+pattern = midi.read_midifile('song v3.mid')
+#printEvents(pattern, 1)
+print analyzeChannelFrequency(pattern, 1)
+#print pattern.resolution
 
 '''
 'SuperMarioBrothers.mid' has one track and one channel; it has 646 notes, all of which are on track 0, channel 0.
